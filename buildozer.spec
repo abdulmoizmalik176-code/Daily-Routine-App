@@ -15,7 +15,7 @@ warn_on_root = 0
 
 [android]
 android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
-android.build_tools = 33.0.2
+android.api = 31
 android.minapi = 21
 android.ndk = 25b
 android.accept_sdk_license = True
