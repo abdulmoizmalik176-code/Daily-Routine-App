@@ -9,6 +9,10 @@ requirements = python3,kivy
 orientation = portrait
 fullscreen = 0
 
+# ======= THIS IS THE MISSING LINE YOU NEED =======
+icon.filename = %(source.dir)s/app_icon.png
+# =================================================
+
 [buildozer]
 log_level = 2
 warn_on_root = 0
