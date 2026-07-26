@@ -90,7 +90,7 @@ def check_perfect_day():
         add_points(20)
         show_popup("Perfect Day!", "+20 bonus points!")
 
-# ================= UI WIDGETS =================
+# ================= UI WIDGETS (Reusable) =================
 class Card(BoxLayout):
     def __init__(self, bg=None, radius=dp(20), **kwargs):
         super().__init__(**kwargs)
@@ -102,7 +102,7 @@ class Card(BoxLayout):
         self.bind(pos=self._update, size=self._update)
     def _update(self, *args): self._rect.pos, self._rect.size = self.pos, self.size
 
-class FAB(Button):
+class FAB(Button): # Floating Action Button
     def __init__(self, target_screen, **kwargs):
         super().__init__(**kwargs)
         self.target = target_screen
@@ -169,7 +169,7 @@ def bottom_nav(active):
 sm = None
 def go_screen(name): sm.current = name
 
-# ================= HOME SCREEN (With Real Pomodoro) =================
+# ================= HOME SCREEN =================
 def get_today_progress():
     today, wd = str(date.today()), date.today().weekday()
     total, done = 0, 0
@@ -474,7 +474,7 @@ class ReportsScreen(Screen):
                 content.add_widget(row)
         scroll.add_widget(content); root.add_widget(scroll); root.add_widget(bottom_nav("reports")); self.add_widget(root)
 
-# ================= MORE SCREEN (With Full Sub-Screens) =================
+# ================= MORE & SUB SCREENS =================
 class MoreScreen(Screen):
     def on_pre_enter(self):
         self.clear_widgets(); root = BoxLayout(orientation="vertical")
@@ -495,7 +495,6 @@ class MoreScreen(Screen):
         data["dark_mode"] = not data.get("dark_mode", False)
         save_data(); Window.clearcolor = theme()["bg"]; self.on_pre_enter()
 
-# ================= FULL SUB-SCREENS =================
 class ExamsScreen(Screen):
     def on_pre_enter(self):
         self.clear_widgets(); t = theme()
@@ -537,16 +536,19 @@ class ProjectsScreen(Screen):
             card = Card(orientation="vertical", height=dp(90), padding=dp(12), spacing=dp(6))
             card.add_widget(make_label(p["title"], fs=dp(15), bold=True, h=dp(25)))
             row = BoxLayout(size_hint_y=None, height=dp(35))
-            row.add_widget(make_label("✅ Completed" if p["completed"] else "🔄 In Progress", fs=dp(12), color=TEAL if p["completed"] else PINK, h=dp(35)))
+            status_text = "✅ Completed" if p["completed"] else "🔄 In Progress"
+            row.add_widget(make_label(status_text, fs=dp(12), color=TEAL if p["completed"] else PINK, h=dp(35)))
             if not p["completed"]:
                 b = make_button("Complete", h=dp(35), bg=ORANGE, fs=dp(11))
-                b.bind(on_release=lambda inst, idx=i: [setitem(p, 'completed', True), save_data(), self.on_pre_enter()] if locals().get('setitem') else None)
+                b.bind(on_release=lambda inst, idx=i: self.complete_project(idx))
                 row.add_widget(b)
             card.add_widget(row); content.add_widget(card)
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
     def add_project(self, inst):
         if not self.tit.text or not self.edt.text: show_popup("Error", "Enter title and end date."); return
         data["projects"].append({"title": self.tit.text, "start": str(date.today()), "end": self.edt.text, "completed": False}); save_data(); self.on_pre_enter()
+    def complete_project(self, idx):
+        data["projects"][idx]["completed"] = True; save_data(); self.on_pre_enter()
 
 class CheckinScreen(Screen):
     def on_pre_enter(self):
@@ -555,15 +557,17 @@ class CheckinScreen(Screen):
         root.add_widget(header("📝 Daily Note", back_to="more", c1=GOLD))
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
         content.add_widget(make_label("How do you feel today?", fs=dp(16), bold=True, h=dp(35), halign="center"))
-        self.sel_mood = "Happy"; self.mood_btns = {}
+        self.sel_mood = "Happy"
         for m in ["Happy", "Normal", "Tired/Low", "Frustrated", "Sleepy"]:
             btn = make_button(m, h=dp(48), bg=GOLD if m=="Happy" else GRAY)
-            btn.bind(on_release=lambda inst, mm=m: [setattr(self, 'sel_mood', mm), self.on_pre_enter()] if locals().get('setattr') else None)
+            btn.bind(on_release=lambda inst, mm=m: self.select_mood(mm))
             content.add_widget(btn)
         content.add_widget(make_label("Write anything about your day:", h=dp(25), color=GOLD, bold=True))
         self.note = TextInput(size_hint_y=None, height=dp(120), multiline=True); content.add_widget(self.note)
         content.add_widget(make_button("SAVE CHECK-IN", h=dp(55), bg=GOLD).bind(on_release=self.save))
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+    def select_mood(self, mm):
+        self.sel_mood = mm; self.on_pre_enter()
     def save(self, inst):
         today = str(date.today())
         data["notes"][today] = {"mood": self.sel_mood, "note": self.note.text.strip()}; save_data(); show_popup("Saved", "Check-in saved!")
