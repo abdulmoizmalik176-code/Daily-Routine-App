@@ -11,7 +11,7 @@ orientation = portrait
 fullscreen = 0
 
 # ======= ICON SETTING =======
-icon.filename = %(source.dir)s/app_icon.png
+icon.filename = %(source.dir)s/icon.png
 # ============================
 
 [buildozer]
