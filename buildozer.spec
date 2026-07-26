@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
 android.archs = arm64-v8a
 version = 1.0
-requirements = python3,kivy,pyjnius,plyer,android
+requirements = python3,kivy
 orientation = portrait
 fullscreen = 0
 
