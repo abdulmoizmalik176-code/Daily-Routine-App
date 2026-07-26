@@ -89,8 +89,8 @@ def get_today_namaz_times():
 
 def show_popup(title, message):
     t = theme()
-    popup = Popup(title=title, content=Label(text=message, color=t["text"], font_size=dp(15)),
-                   size_hint=(0.8, 0.4), title_color=t["text"], separator_color=ORANGE, title_size=dp(18))
+    popup = Popup(title=title, content=Label(text=message, color=t["text"]),
+                   size_hint=(0.8, 0.4), title_color=t["text"], separator_color=ORANGE)
     popup.open()
 
 def add_points(amount):
@@ -116,8 +116,9 @@ def check_perfect_day():
             show_popup("Perfect Day!", "+20 bonus points - all tasks done today!")
 
 # ---------------------------------------------------
-# STYLE HELPERS (UPDATED WITH DP FOR MEDIUM TEXT)
+# STYLE HELPERS
 # ---------------------------------------------------
+
 class Card(BoxLayout):
     def __init__(self, bg=None, radius=dp(20), **kwargs):
         super().__init__(**kwargs)
@@ -150,24 +151,24 @@ class Ring(Widget):
             Color(*self.ring_color)
             Line(circle=(cx, cy, r, 90, 90 - 360 * self.pct if self.pct <= 1 else -270), width=dp(9), cap="round")
 
-def make_button(text, height=dp(52), bg=ORANGE, fg=WHITE, font_size=dp(16)):
+def make_button(text, height=dp(52), bg=ORANGE, fg=WHITE, font_size=dp(15)):
     return Button(text=text, size_hint_y=None, height=height, background_normal="",
                   background_color=bg, color=fg, font_size=font_size, bold=True)
 
-def make_label(text, height=dp(28), font_size=dp(15), color=None, bold=False, halign="left"):
+def make_label(text, height=dp(28), font_size=dp(14), color=None, bold=False, halign="left"):
     t = theme()
     lbl = Label(text=text, size_hint_y=None, height=height, font_size=font_size,
                 color=color if color else t["text"], bold=bold)
     return lbl
 
 def section_label(text, color=ORANGE):
-    return make_label(text.upper(), height=dp(32), font_size=dp(14), color=color, bold=True)
+    return make_label(text.upper(), height=dp(32), font_size=dp(13), color=color, bold=True)
 
 def header(title, screen_name, back_to=None, c1=ORANGE, c2=GOLD, dark_toggle=False):
-    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(110), padding=[dp(20), dp(15), dp(20), dp(10)])
+    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(110), padding=[20, 15, 20, 10])
     with box.canvas.before:
         Color(*c1)
-        box._rect = RoundedRectangle(pos=box.pos, size=box.size, radius=[0])
+        box._rect = RoundedRectangle(pos=box.pos, size=box.size, radius=[dp(0)])
     def upd(*a):
         box._rect.pos = box.pos
         box._rect.size = box.size
@@ -176,7 +177,7 @@ def header(title, screen_name, back_to=None, c1=ORANGE, c2=GOLD, dark_toggle=Fal
     row = BoxLayout(size_hint_y=None, height=dp(30))
     if back_to:
         back_btn = Button(text="< Back", size_hint_x=None, width=dp(100), background_normal="",
-                           background_color=(0, 0, 0, 0), color=WHITE, font_size=dp(14))
+                           background_color=(0, 0, 0, 0), color=WHITE, font_size=dp(13))
         back_btn.bind(on_release=lambda i: go_screen(back_to))
         row.add_widget(back_btn)
     box.add_widget(row)
@@ -192,18 +193,20 @@ def bottom_nav(active):
     for label, name in items:
         c = ORANGE if name == active else t["muted"]
         btn = Button(text=label, background_normal="", background_color=t["card"],
-                     color=c, font_size=dp(13), bold=(name == active))
+                     color=c, font_size=dp(12), bold=(name == active))
         btn.bind(on_release=lambda inst, s=name: go_screen(s))
         nav.add_widget(btn)
     return nav
 
 sm = None
+
 def go_screen(name):
     sm.current = name
 
 # ---------------------------------------------------
 # HOME SCREEN
 # ---------------------------------------------------
+
 def get_today_progress():
     today = str(date.today())
     weekday = date.today().weekday()
@@ -235,7 +238,7 @@ class HomeScreen(Screen):
         root = BoxLayout(orientation="vertical")
         with root.canvas.before:
             Color(*t["bg"])
-            root._rect = RoundedRectangle(pos=root.pos, size=root.size, radius=[0])
+            root._rect = RoundedRectangle(pos=root.pos, size=root.size, radius=[dp(0)])
         def upd(*a):
             root._rect.pos = root.pos
             root._rect.size = root.size
@@ -259,9 +262,9 @@ class HomeScreen(Screen):
         card.add_widget(ring_wrap)
 
         stats_col = BoxLayout(orientation="vertical")
-        stats_col.add_widget(make_label(f"Streak: {data.get('points',0)//20} days", font_size=dp(16), color=ORANGE, bold=True))
-        stats_col.add_widget(make_label(f"Points: {data['points']}", font_size=dp(16), color=PURPLE, bold=True))
-        stats_col.add_widget(make_label(f"Level: {data['level']}", font_size=dp(16), color=GOLD, bold=True))
+        stats_col.add_widget(make_label(f"Streak: {data.get('points',0)//20} days", font_size=dp(15), color=ORANGE, bold=True))
+        stats_col.add_widget(make_label(f"Points: {data['points']}", font_size=dp(15), color=PURPLE, bold=True))
+        stats_col.add_widget(make_label(f"Level: {data['level']}", font_size=dp(15), color=GOLD, bold=True))
         card.add_widget(stats_col)
         content.add_widget(card)
 
@@ -287,14 +290,14 @@ class HomeScreen(Screen):
         t = theme()
         row = Card(orientation="horizontal", size_hint_y=None, height=dp(70), padding=dp(15), spacing=dp(15))
         check = make_button("OK" if done else "", height=dp(40), bg=(0.15, 0.6, 0.3, 1) if done else GRAY,
-                             fg=WHITE, font_size=dp(13))
+                             fg=WHITE, font_size=dp(12))
         check.size_hint_x = None
         check.width = dp(40)
         check.bind(on_release=lambda i: on_tap())
         row.add_widget(check)
         col = BoxLayout(orientation="vertical")
-        col.add_widget(make_label(name, font_size=dp(16), bold=True, height=dp(25)))
-        col.add_widget(make_label(sub, font_size=dp(13), color=t["muted"], height=dp(20)))
+        col.add_widget(make_label(name, font_size=dp(15), bold=True, height=dp(25)))
+        col.add_widget(make_label(sub, font_size=dp(12), color=t["muted"], height=dp(20)))
         row.add_widget(col)
         return row
 
@@ -312,6 +315,7 @@ class HomeScreen(Screen):
 # ---------------------------------------------------
 # HABITS SCREEN + ADD HABIT
 # ---------------------------------------------------
+
 class HabitsScreen(Screen):
     def on_pre_enter(self):
         self.clear_widgets()
@@ -340,16 +344,16 @@ class HabitsScreen(Screen):
             color = tuple(h["color"])
             card = Card(orientation="vertical", size_hint_y=None, height=dp(140), padding=dp(15), spacing=dp(8))
             top_row = BoxLayout(size_hint_y=None, height=dp(30))
-            top_row.add_widget(make_label(h["name"], font_size=dp(17), bold=True, height=dp(30)))
+            top_row.add_widget(make_label(h["name"], font_size=dp(16), bold=True, height=dp(30)))
             streak = sum(1 for d in week_dates if d in h["log"])
-            top_row.add_widget(make_label(f"{streak}/7", font_size=dp(16), color=color, bold=True, height=dp(30)))
+            top_row.add_widget(make_label(f"{streak}/7", font_size=dp(15), color=color, bold=True, height=dp(30)))
             card.add_widget(top_row)
 
             heat_row = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(6))
             for wd, d in enumerate(week_dates):
                 done = d in h["log"]
                 sq_color = color if done else (0.88, 0.85, 0.80, 1)
-                b = make_button("", height=dp(44), bg=sq_color, font_size=1)
+                b = make_button("", height=dp(44), bg=sq_color, font_size=dp(1))
                 b.bind(on_release=lambda i, hh=idx, dd=d: self.toggle_habit(hh, dd))
                 heat_row.add_widget(b)
             card.add_widget(heat_row)
@@ -386,7 +390,7 @@ class AddHabitScreen(Screen):
         content.bind(minimum_height=content.setter("height"))
 
         content.add_widget(make_label("Habit Name:", height=dp(25), color=PINK, bold=True))
-        self.name_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.name_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.name_input)
 
         content.add_widget(section_label("Repeat On", color=PINK))
@@ -395,7 +399,7 @@ class AddHabitScreen(Screen):
         self.selected_days = [True, True, True, True, True, False, False]
         for i, dn in enumerate(DAY_NAMES):
             btn = make_button(dn[:2], height=dp(50), bg=PINK if self.selected_days[i] else GRAY,
-                               fg=WHITE if self.selected_days[i] else theme()["text"], font_size=dp(13))
+                               fg=WHITE if self.selected_days[i] else theme()["text"], font_size=dp(12))
             btn.bind(on_release=lambda inst, idx=i: self.toggle_day(idx))
             days_row.add_widget(btn)
             self.day_buttons.append(btn)
@@ -444,6 +448,7 @@ class AddHabitScreen(Screen):
 # ---------------------------------------------------
 # TASKS SCREEN + ADD TASK
 # ---------------------------------------------------
+
 class TasksScreen(Screen):
     def on_pre_enter(self):
         self.clear_widgets()
@@ -465,18 +470,18 @@ class TasksScreen(Screen):
             done = today in tk["done_dates"]
             card = Card(orientation="horizontal", size_hint_y=None, height=dp(80), padding=dp(12), spacing=dp(12))
             check = make_button("OK" if done else "", height=dp(40),
-                                 bg=(0.15, 0.6, 0.3, 1) if done else GRAY, font_size=dp(12))
+                                 bg=(0.15, 0.6, 0.3, 1) if done else GRAY, font_size=dp(11))
             check.size_hint_x = None
             check.width = dp(40)
             check.bind(on_release=lambda inst, idx=i: self.toggle(idx))
             card.add_widget(check)
             col = BoxLayout(orientation="vertical")
             note = f" ({tk['note']})" if tk.get("note") else ""
-            col.add_widget(make_label(tk["name"], font_size=dp(16), bold=True, height=dp(25)))
-            col.add_widget(make_label(f"{tk['time']}{note}", font_size=dp(13), color=t["muted"], height=dp(20)))
+            col.add_widget(make_label(tk["name"], font_size=dp(15), bold=True, height=dp(25)))
+            col.add_widget(make_label(f"{tk['time']}{note}", font_size=dp(12), color=t["muted"], height=dp(20)))
             card.add_widget(col)
             pr = tk.get("priority", "Medium")
-            pr_lbl = make_label(pr, font_size=dp(12), color=WHITE, bold=True, height=dp(30))
+            pr_lbl = make_label(pr, font_size=dp(11), color=WHITE, bold=True, height=dp(30))
             pr_lbl.size_hint_x = None
             pr_lbl.width = dp(70)
             with pr_lbl.canvas.before:
@@ -518,11 +523,11 @@ class AddTaskScreen(Screen):
         content.bind(minimum_height=content.setter("height"))
 
         content.add_widget(make_label("Task Name:", height=dp(25), color=TEAL, bold=True))
-        self.name_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.name_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.name_input)
 
         content.add_widget(make_label("Time:", height=dp(25), color=PINK, bold=True))
-        self.time_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.time_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.time_input)
 
         content.add_widget(section_label("Priority", color=TEAL))
@@ -530,14 +535,14 @@ class AddTaskScreen(Screen):
         pr_row = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(8))
         self.pr_buttons = {}
         for pr, c in [("High", PINK), ("Medium", GOLD), ("Low", (0.6, 0.6, 0.6, 1))]:
-            btn = make_button(pr, height=dp(50), bg=c if pr == "High" else theme()["card"], fg=WHITE if pr == "High" else theme()["text"], font_size=dp(14))
+            btn = make_button(pr, height=dp(50), bg=c if pr == "High" else theme()["card"], fg=WHITE if pr == "High" else theme()["text"])
             btn.bind(on_release=lambda inst, p=pr: self.select_priority(p))
             pr_row.add_widget(btn)
             self.pr_buttons[pr] = btn
         content.add_widget(pr_row)
 
         content.add_widget(make_label("Note (optional):", height=dp(25), color=PURPLE, bold=True))
-        self.note_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.note_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.note_input)
 
         save_btn = make_button("+ ADD TASK", height=dp(55), bg=ORANGE)
@@ -571,6 +576,7 @@ class AddTaskScreen(Screen):
 # ---------------------------------------------------
 # REPORTS SCREEN
 # ---------------------------------------------------
+
 class ReportsScreen(Screen):
     mode = "weekly"
 
@@ -586,9 +592,9 @@ class ReportsScreen(Screen):
 
         toggle_row = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(8))
         w_btn = make_button("Weekly", height=dp(45), bg=BLUE if self.mode == "weekly" else t["card"],
-                             fg=WHITE if self.mode == "weekly" else t["text"], font_size=dp(14))
+                             fg=WHITE if self.mode == "weekly" else t["text"])
         m_btn = make_button("Monthly", height=dp(45), bg=BLUE if self.mode == "monthly" else t["card"],
-                             fg=WHITE if self.mode == "monthly" else t["text"], font_size=dp(14))
+                             fg=WHITE if self.mode == "monthly" else t["text"])
         w_btn.bind(on_release=lambda i: self.set_mode("weekly"))
         m_btn.bind(on_release=lambda i: self.set_mode("monthly"))
         toggle_row.add_widget(w_btn)
@@ -626,13 +632,13 @@ class ReportsScreen(Screen):
         def stat_tile(value, label, color):
             tile = Card(orientation="vertical", bg=color, size_hint_y=None, height=dp(95), padding=dp(10))
             tile.add_widget(Label(text=value, font_size=dp(24), bold=True, color=WHITE))
-            tile.add_widget(Label(text=label, font_size=dp(12), color=WHITE))
+            tile.add_widget(Label(text=label, font_size=dp(11), color=WHITE))
             return tile
 
         col1.add_widget(stat_tile(str(total_tasks_done), f"Tasks Done {label_suffix}", TEAL))
         col1.add_widget(stat_tile(f"{namaz_count}/{namaz_max}", "Namaz Prayed", ORANGE))
         col2.add_widget(stat_tile(f"{quran_count}/{days_count}", "Quran Days", PURPLE))
-                col2.add_widget(stat_tile(f"{ent_count}/{days_count}", "Entertainment", GOLD))
+        col2.add_widget(stat_tile(f"{ent_count}/{days_count}", "Entertainment", GOLD))
         grid.add_widget(col1)
         grid.add_widget(col2)
         content.add_widget(grid)
@@ -642,8 +648,8 @@ class ReportsScreen(Screen):
         for d, entry in sorted(data["notes"].items(), reverse=True):
             if in_range(d) and shown < 10:
                 row = Card(orientation="horizontal", size_hint_y=None, height=dp(45), padding=dp(12))
-                row.add_widget(make_label(d, font_size=dp(14), height=dp(30)))
-                row.add_widget(make_label(entry["mood"], font_size=dp(14), color=BLUE, bold=True, height=dp(30)))
+                row.add_widget(make_label(d, font_size=dp(13), height=dp(30)))
+                row.add_widget(make_label(entry["mood"], font_size=dp(13), color=BLUE, bold=True, height=dp(30)))
                 content.add_widget(row)
                 shown += 1
 
@@ -709,10 +715,10 @@ class ExamsScreen(Screen):
         content.bind(minimum_height=content.setter("height"))
 
         content.add_widget(make_label("Subject:", height=dp(25), color=PURPLE, bold=True))
-        self.subject_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.subject_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.subject_input)
         content.add_widget(make_label("Date (YYYY-MM-DD):", height=dp(25), color=PURPLE, bold=True))
-        self.date_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.date_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.date_input)
         add_btn = make_button("+ ADD EXAM", height=dp(50), bg=PURPLE)
         add_btn.bind(on_release=self.add_exam)
@@ -727,8 +733,8 @@ class ExamsScreen(Screen):
             except ValueError:
                 info = "invalid date"
             card = Card(orientation="vertical", size_hint_y=None, height=dp(70), padding=dp(12))
-            card.add_widget(make_label(exam["subject"], font_size=dp(16), bold=True, height=dp(25)))
-            card.add_widget(make_label(info, font_size=dp(13), color=PINK, height=dp(20)))
+            card.add_widget(make_label(exam["subject"], font_size=dp(15), bold=True, height=dp(25)))
+            card.add_widget(make_label(info, font_size=dp(12), color=PINK, height=dp(20)))
             content.add_widget(card)
 
         scroll.add_widget(content)
@@ -753,10 +759,10 @@ class ProjectsScreen(Screen):
         content.bind(minimum_height=content.setter("height"))
 
         content.add_widget(make_label("Title:", height=dp(25), color=BLUE, bold=True))
-        self.title_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.title_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.title_input)
         content.add_widget(make_label("End Date (YYYY-MM-DD):", height=dp(25), color=BLUE, bold=True))
-        self.end_input = TextInput(size_hint_y=None, height=dp(45), multiline=False, font_size=dp(15))
+        self.end_input = TextInput(size_hint_y=None, height=dp(45), multiline=False)
         content.add_widget(self.end_input)
         add_btn = make_button("+ ADD PROJECT", height=dp(50), bg=BLUE)
         add_btn.bind(on_release=self.add_project)
@@ -764,12 +770,12 @@ class ProjectsScreen(Screen):
 
         for i, p in enumerate(data["projects"]):
             card = Card(orientation="vertical", size_hint_y=None, height=dp(90), padding=dp(12), spacing=dp(6))
-            card.add_widget(make_label(p["title"], font_size=dp(16), bold=True, height=dp(25)))
+            card.add_widget(make_label(p["title"], font_size=dp(15), bold=True, height=dp(25)))
             status = "Completed" if p["completed"] else "In Progress"
             row = BoxLayout(size_hint_y=None, height=dp(35))
-            row.add_widget(make_label(status, font_size=dp(13), color=TEAL if p["completed"] else PINK, height=dp(35)))
+            row.add_widget(make_label(status, font_size=dp(12), color=TEAL if p["completed"] else PINK, height=dp(35)))
             if not p["completed"]:
-                cbtn = make_button("Complete", height=dp(35), bg=ORANGE, font_size=dp(12))
+                cbtn = make_button("Complete", height=dp(35), bg=ORANGE, font_size=dp(11))
                 cbtn.bind(on_release=lambda inst, idx=i: self.complete(idx))
                 row.add_widget(cbtn)
             card.add_widget(row)
@@ -801,19 +807,19 @@ class CheckinScreen(Screen):
         content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10))
         content.bind(minimum_height=content.setter("height"))
 
-        content.add_widget(make_label("How do you feel today?", font_size=dp(17), bold=True, height=dp(35), halign="center"))
+        content.add_widget(make_label("How do you feel today?", font_size=dp(16), bold=True, height=dp(35), halign="center"))
         self.selected_mood = "Happy"
         self.mood_buttons = {}
         moods = ["Happy", "Normal", "Tired/Low", "Frustrated", "Sleepy"]
         for m in moods:
             btn = make_button(m, height=dp(48), bg=GOLD if m == "Happy" else theme()["card"],
-                               fg=WHITE if m == "Happy" else theme()["text"], font_size=dp(14))
+                               fg=WHITE if m == "Happy" else theme()["text"])
             btn.bind(on_release=lambda inst, mm=m: self.pick_mood(mm))
             content.add_widget(btn)
             self.mood_buttons[m] = btn
 
         content.add_widget(make_label("Write anything about your day:", height=dp(25), color=GOLD, bold=True))
-        self.note_input = TextInput(size_hint_y=None, height=dp(120), multiline=True, font_size=dp(15))
+        self.note_input = TextInput(size_hint_y=None, height=dp(120), multiline=True)
         content.add_widget(self.note_input)
 
         save_btn = make_button("SAVE CHECK-IN", height=dp(55), bg=GOLD)
@@ -855,7 +861,7 @@ class PointsScreen(Screen):
             content.add_widget(make_label("No badges yet - keep going!"))
         for b in data["badges"]:
             card = Card(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(15), bg=ORANGE)
-            card.add_widget(Label(text=b, color=WHITE, bold=True, font_size=dp(15)))
+            card.add_widget(Label(text=b, color=WHITE, bold=True, font_size=dp(14)))
             content.add_widget(card)
 
         scroll.add_widget(content)
@@ -865,7 +871,7 @@ class PointsScreen(Screen):
     def _stat_card(self, value, label, color):
         c = Card(orientation="vertical", bg=color, padding=dp(10))
         c.add_widget(Label(text=value, font_size=dp(26), bold=True, color=WHITE))
-        c.add_widget(Label(text=label, font_size=dp(13), color=WHITE))
+        c.add_widget(Label(text=label, font_size=dp(12), color=WHITE))
         return c
 
 
@@ -885,25 +891,25 @@ class NamazScreen(Screen):
         for p in times:
             done = p in data["namaz_log"][today]
             card = Card(orientation="horizontal", size_hint_y=None, height=dp(70), padding=dp(12), spacing=dp(12))
-            check = make_button("OK" if done else "", height=dp(40), bg=(0.15, 0.6, 0.3, 1) if done else GRAY, font_size=dp(12))
+            check = make_button("OK" if done else "", height=dp(40), bg=(0.15, 0.6, 0.3, 1) if done else GRAY, font_size=dp(11))
             check.size_hint_x = None
             check.width = dp(40)
             check.bind(on_release=lambda inst, pp=p: self.toggle_namaz(pp))
             card.add_widget(check)
             col = BoxLayout(orientation="vertical")
-            col.add_widget(make_label(p, font_size=dp(16), bold=True, height=dp(25)))
-            col.add_widget(make_label(times[p], font_size=dp(13), color=theme()["muted"], height=dp(20)))
+            col.add_widget(make_label(p, font_size=dp(15), bold=True, height=dp(25)))
+            col.add_widget(make_label(times[p], font_size=dp(12), color=theme()["muted"], height=dp(20)))
             card.add_widget(col)
             content.add_widget(card)
 
         q_done = today in data["quran_log"]
         qcard = Card(orientation="horizontal", size_hint_y=None, height=dp(70), padding=dp(12), spacing=dp(12))
-        qcheck = make_button("OK" if q_done else "", height=dp(40), bg=(0.15, 0.6, 0.3, 1) if q_done else GRAY, font_size=dp(12))
+        qcheck = make_button("OK" if q_done else "", height=dp(40), bg=(0.15, 0.6, 0.3, 1) if q_done else GRAY, font_size=dp(11))
         qcheck.size_hint_x = None
         qcheck.width = dp(40)
         qcheck.bind(on_release=self.toggle_quran)
         qcard.add_widget(qcheck)
-        qcard.add_widget(make_label("Quran Recitation", font_size=dp(16), bold=True))
+        qcard.add_widget(make_label("Quran Recitation", font_size=dp(15), bold=True))
         content.add_widget(qcard)
 
         scroll.add_widget(content)
