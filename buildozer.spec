@@ -4,22 +4,24 @@ package.name = routinemanager
 package.domain = org.routineapp
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
+android.archs = arm64-v8a
 version = 1.0
-requirements = python3,kivy
+requirements = python3,kivy,pyjnius,plyer,android
 orientation = portrait
 fullscreen = 0
 
-# ======= THIS IS THE MISSING LINE YOU NEED =======
+# ======= ICON SETTING =======
 icon.filename = %(source.dir)s/app_icon.png
-# =================================================
+# ============================
 
 [buildozer]
 log_level = 2
 warn_on_root = 0
 
 [android]
-android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,INTERNET
 android.api = 31
 android.minapi = 21
 android.ndk = 25b
 android.accept_sdk_license = True
+android.gles_version = 3
