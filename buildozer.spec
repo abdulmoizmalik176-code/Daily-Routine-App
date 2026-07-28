@@ -4,6 +4,7 @@ package.name = routinemanager
 package.domain = org.routineapp
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
+source.encoding = utf-8
 android.archs = arm64-v8a
 version = 1.0
 requirements = python3,kivy
@@ -19,7 +20,7 @@ log_level = 2
 warn_on_root = 0
 
 [android]
-android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,INTERNET
+android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 android.api = 31
 android.minapi = 21
 android.ndk = 25b
