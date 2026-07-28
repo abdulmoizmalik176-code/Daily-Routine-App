@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from functools import partial
 
 from kivy.app import App
@@ -14,27 +14,27 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.popup import Popup
 from kivy.uix.relativelayout import RelativeLayout
+from kivy.uix.slider import Slider
 from kivy.uix.widget import Widget
 from kivy.graphics import Color, RoundedRectangle, Line, Rectangle
 from kivy.metrics import dp
 import traceback
 
 # ================= DATA FILE =================
-# The real safe per-app storage path is set inside build() below,
-# using self.user_data_dir (only works on a RUNNING app instance).
 DATA_FILE = "routine_data.json"
 
 # ================= COLORS =================
 LIGHT = {"bg": (0.98, 0.95, 0.91, 1), "card": (1, 1, 1, 1), "text": (0.24, 0.16, 0.10, 1), "muted": (0.61, 0.56, 0.51, 1)}
 DARK = {"bg": (0.125, 0.094, 0.070, 1), "card": (0.18, 0.14, 0.11, 1), "text": (0.94, 0.90, 0.86, 1), "muted": (0.70, 0.64, 0.57, 1)}
 ORANGE = (0.91, 0.35, 0.05, 1); GOLD = (0.97, 0.66, 0.23, 1); TEAL = (0.18, 0.55, 0.47, 1)
-PURPLE = (0.47, 0.31, 0.66, 1); PINK = (0.78, 0.27, 0.36, 1); BLUE = (0.18, 0.43, 0.63, 1); WHITE = (1,1,1,1); GRAY = (0.85,0.82,0.78,1)
+PURPLE = (0.47, 0.31, 0.66, 1); PINK = (0.78, 0.27, 0.36, 1); BLUE = (0.18, 0.43, 0.63, 1); WHITE = (1, 1, 1, 1); GRAY = (0.85, 0.82, 0.78, 1)
 
 def theme(): return DARK if data.get("dark_mode") else LIGHT
 
 DATA_DEFAULT = {
     "tasks": [], "habits": [], "namaz_log": {}, "quran_log": [], "entertainment_log": [],
-    "points": 0, "level": 1, "badges": [], "exams": [], "projects": [], "notes": {}, "dark_mode": False
+    "points": 0, "level": 1, "badges": [], "exams": [], "projects": [], "notes": {},
+    "points_awarded_log": {}, "dark_mode": False
 }
 
 def load_data():
@@ -75,40 +75,112 @@ NAMAZ_TIMES = {
 DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 HABIT_COLORS = [ORANGE, TEAL, PURPLE, PINK, GOLD, BLUE]
 
+def parse_flexible_date(dt_str):
+    """Parses various date formats like YYYY-MM-DD, MM-DD, YYYY/MM/DD."""
+    if not dt_str: return None
+    dt_str = dt_str.strip()
+    for fmt in ("%Y-%m-%d", "%m-%d", "%d-%m", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            parsed = datetime.strptime(dt_str, fmt).date()
+            if fmt in ("%m-%d", "%d-%m"):
+                parsed = parsed.replace(year=date.today().year)
+            return parsed
+        except ValueError:
+            pass
+    return None
+
 def get_today_namaz_times(): return NAMAZ_TIMES[date.today().month]
 
+# ================= HIGH CONTRAST POPUP =================
 def show_popup(title, message, on_close=None):
-    t = theme()
-    popup = Popup(title=title, content=Label(text=message, color=t["text"], font_size=dp(16), halign="center"),
-                  size_hint=(0.8, 0.4), title_color=t["text"], separator_color=ORANGE, title_size=dp(18))
-    if on_close:
-        popup.bind(on_dismiss=lambda *a: on_close())
+    popup_layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
+    with popup_layout.canvas.before:
+        Color(0.2, 0.15, 0.12, 1)
+        rect = RoundedRectangle(radius=[dp(12)])
+    popup_layout.bind(pos=lambda inst, val: setattr(rect, "pos", inst.pos),
+                      size=lambda inst, val: setattr(rect, "size", inst.size))
+
+    msg_label = Label(text=message, color=(1, 1, 1, 1), font_size=dp(15), halign="center", valign="middle")
+    msg_label.bind(size=lambda inst, val: setattr(msg_label, "text_size", val))
+    popup_layout.add_widget(msg_label)
+
+    close_btn = Button(text="OK", size_hint_y=None, height=dp(42), background_normal="", background_color=ORANGE, color=WHITE, bold=True)
+    popup_layout.add_widget(close_btn)
+
+    popup = Popup(title=title, content=popup_layout, size_hint=(0.85, 0.35),
+                  title_color=GOLD, title_size=dp(18), auto_dismiss=False)
+    close_btn.bind(on_release=lambda *a: (popup.dismiss(), on_close() if on_close else None))
     popup.open()
 
-def add_points(amount):
-    data["points"] += amount
+# ================= POINTS & STREAK LOGIC =================
+def award_points_once(item_id, amount):
+    """Awards points only once per item key per day."""
+    today = str(date.today())
+    if today not in data["points_awarded_log"]:
+        data["points_awarded_log"][today] = []
+
+    if item_id not in data["points_awarded_log"][today]:
+        data["points_awarded_log"][today].append(item_id)
+        data["points"] += amount
+        check_level_up()
+        save_data()
+
+def revoke_points_once(item_id, amount):
+    """Revokes points if an item is unchecked on the same day."""
+    today = str(date.today())
+    if today in data["points_awarded_log"] and item_id in data["points_awarded_log"][today]:
+        data["points_awarded_log"][today].remove(item_id)
+        data["points"] = max(0, data["points"] - amount)
+        save_data()
+
+def check_level_up():
     new_level = (data["points"] // 100) + 1
     if new_level > data["level"]:
         data["level"] = new_level
         data["badges"].append(f"Level {data['level']} Reached")
-        show_popup("Level Up!", f"You are now Level {data['level']}!")
-    save_data()
+        show_popup("Level Up!", f"Congratulations! You are now Level {data['level']}!")
+
+def calculate_real_streak():
+    """Calculates actual consecutive days of completing at least 1 action."""
+    today = date.today()
+    streak = 0
+    curr_date = today
+
+    active_days = set()
+    for tk in data["tasks"]:
+        active_days.update(tk.get("done_dates", []))
+    for h in data["habits"]:
+        active_days.update(h.get("log", []))
+    for d, namazs in data.get("namaz_log", {}).items():
+        if namazs: active_days.add(d)
+    active_days.update(data.get("quran_log", []))
+
+    while True:
+        d_str = str(curr_date)
+        if d_str in active_days:
+            streak += 1
+            curr_date -= timedelta(days=1)
+        else:
+            if curr_date == today:
+                curr_date -= timedelta(days=1)
+                continue
+            break
+    return streak
 
 def check_perfect_day():
     today = str(date.today())
     if not data["tasks"]: return
-    if all(today in t["done_dates"] for t in data["tasks"]):
+    if all(today in t.get("done_dates", []) for t in data["tasks"]):
         badge = f"Perfect Day - {today}"
         if badge not in data["badges"]:
             data["badges"].append(badge)
-            add_points(20)
-            show_popup("Perfect Day!", "+20 bonus points!")
+            award_points_once(f"perfect_day_{today}", 20)
+            show_popup("Perfect Day!", "+20 bonus points earned!")
 
 class Card(BoxLayout):
     def __init__(self, bg=None, radius=dp(20), **kwargs):
         super().__init__(**kwargs)
-        self.size_hint_y = None  # FIX: without this, explicit height was ignored,
-                                  # causing rows to overlap instead of stacking
+        self.size_hint_y = None
         self.padding, self.spacing = dp(15), dp(10)
         self._bg_color = bg if bg else theme()["card"]
         with self.canvas.before:
@@ -130,13 +202,9 @@ class FAB(Button):
         self.bind(pos=self._update, size=self._update)
     def _update(self, *args): self.rect.pos, self.rect.size = self.pos, self.size
 
-
 def add_fab(root, target):
-    """Adds a floating + button positioned safely above the bottom nav,
-    so it never overlaps other buttons or text."""
     fab = FAB(target)
-    def reposition(*a):
-        fab.pos = (root.width - fab.width - dp(20), dp(90))
+    def reposition(*a): fab.pos = (root.width - fab.width - dp(20), dp(90))
     root.bind(size=reposition, pos=reposition)
     root.add_widget(fab)
     reposition()
@@ -167,15 +235,25 @@ def section_label(text, color=ORANGE):
     return make_label(text.upper(), h=dp(32), fs=dp(14), color=color, bold=True)
 
 def header(title, back_to=None, c1=ORANGE, c2=GOLD):
-    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(110), padding=[dp(20), dp(15), dp(20), dp(10)])
+    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(125), padding=[dp(20), dp(10), dp(20), dp(10)])
     with box.canvas.before:
         Color(*c1); box._rect = Rectangle(pos=box.pos, size=box.size)
     box.bind(pos=lambda *a: setattr(box._rect, "pos", box.pos), size=lambda *a: setattr(box._rect, "size", box.size))
+
+    # Top Row: Date & Back Button
+    top_row = BoxLayout(size_hint_y=None, height=dp(25))
+    today_str = date.today().strftime("%A, %b %d, %Y")
+    date_lbl = Label(text=today_str, font_size=dp(12), color=(1,1,1,0.85), halign="left", valign="center")
+    date_lbl.bind(size=lambda inst, val: setattr(date_lbl, "text_size", val))
+    top_row.add_widget(date_lbl)
+
     if back_to:
-        b = Button(text="< Back", size_hint_x=None, width=dp(100), background_normal="", background_color=(0,0,0,0), color=WHITE, font_size=dp(15), bold=True)
+        b = Button(text="< Back", size_hint_x=None, width=dp(70), background_normal="", background_color=(0,0,0,0), color=WHITE, font_size=dp(13), bold=True)
         b.bind(on_release=partial(go_screen, back_to))
-        box.add_widget(b)
-    box.add_widget(Label(text=title, font_size=dp(24), bold=True, color=WHITE))
+        top_row.add_widget(b)
+
+    box.add_widget(top_row)
+    box.add_widget(Label(text=title, font_size=dp(22), bold=True, color=WHITE, halign="left", valign="center"))
     return box
 
 def bottom_nav(active):
@@ -192,26 +270,16 @@ def bottom_nav(active):
         nav.add_widget(btn)
     return nav
 
-
 class SafeScreen(Screen):
-    """
-    Every screen inherits from this instead of Screen directly.
-    If anything goes wrong while building a screen, instead of the
-    whole app crashing silently, this catches the error and shows
-    it on screen so it can be read and fixed.
-    """
     def on_pre_enter(self):
         try:
             self._build()
         except Exception:
             self.clear_widgets()
             box = BoxLayout(orientation="vertical", padding=dp(20), spacing=dp(10))
-            box.add_widget(Label(text="Something went wrong on this screen:",
-                                  color=(1, 1, 1, 1), font_size=dp(18), bold=True,
-                                  size_hint_y=None, height=dp(50)))
+            box.add_widget(Label(text="Something went wrong on this screen:", color=(1, 1, 1, 1), font_size=dp(18), bold=True, size_hint_y=None, height=dp(50)))
             err_scroll = ScrollView()
-            err_label = Label(text=traceback.format_exc(), color=(1, 0.6, 0.6, 1),
-                               font_size=dp(12), size_hint_y=None, halign="left", valign="top")
+            err_label = Label(text=traceback.format_exc(), color=(1, 0.6, 0.6, 1), font_size=dp(12), size_hint_y=None, halign="left", valign="top")
             err_label.bind(texture_size=lambda inst, val: setattr(err_label, "height", val[1]))
             err_label.bind(width=lambda inst, val: err_label.setter("text_size")(err_label, (val, None)))
             err_scroll.add_widget(err_label)
@@ -229,16 +297,16 @@ def get_today_progress():
     total, done = 0, 0
     for t in data["tasks"]:
         total += 1
-        if today in t["done_dates"]: done += 1
+        if today in t.get("done_dates", []): done += 1
     for h in data["habits"]:
         if h["days"][wd]:
             total += 1
-            if today in h["log"]: done += 1
+            if today in h.get("log", []): done += 1
     for p in get_today_namaz_times():
         total += 1
         if p in data["namaz_log"].get(today, []): done += 1
     total += 1
-    if today in data["quran_log"]: done += 1
+    if today in data.get("quran_log", []): done += 1
     return 0 if total == 0 else done / total
 
 class HomeScreen(SafeScreen):
@@ -264,9 +332,11 @@ class HomeScreen(SafeScreen):
         ring = Ring(pct=pct, size_hint=(None, None), size=(dp(130), dp(130)))
         wrap = BoxLayout(size_hint_x=None, width=dp(140)); wrap.add_widget(ring); card.add_widget(wrap)
         stats = BoxLayout(orientation="vertical")
-        stats.add_widget(make_label(f"Streak: {data.get('points',0)//20} days", fs=dp(16), color=ORANGE))
-        stats.add_widget(make_label(f"Points: {data['points']}", fs=dp(16), color=PURPLE))
-        stats.add_widget(make_label(f"Level: {data['level']}", fs=dp(16), color=GOLD))
+
+        real_streak = calculate_real_streak()
+        stats.add_widget(make_label(f"Streak: {real_streak} days", fs=dp(16), color=ORANGE, bold=True))
+        stats.add_widget(make_label(f"Points: {data['points']}", fs=dp(16), color=PURPLE, bold=True))
+        stats.add_widget(make_label(f"Level: {data['level']}", fs=dp(16), color=GOLD, bold=True))
         card.add_widget(stats); content.add_widget(card)
 
         content.add_widget(section_label("Focus Timer"))
@@ -281,17 +351,25 @@ class HomeScreen(SafeScreen):
         today = str(date.today())
         for i, tk in enumerate(data["tasks"]):
             if i >= 5: break
-            done = today in tk["done_dates"]
+            done = today in tk.get("done_dates", [])
             row = Card(orientation="horizontal", height=dp(70), padding=dp(12))
             check = Button(text="OK" if done else "", size_hint_x=None, width=dp(40), height=dp(40),
                            background_normal="", background_color=(0.15, 0.6, 0.3, 1) if done else GRAY,
                            color=WHITE, font_size=dp(14), bold=True, pos_hint={"center_y": 0.5})
             check.bind(on_release=partial(self.toggle_task, i))
             row.add_widget(check)
+
             col = BoxLayout(orientation="vertical")
             col.add_widget(make_label(tk["name"], fs=dp(16), bold=True, h=dp(25)))
-            col.add_widget(make_label(tk["time"], fs=dp(13), color=t["muted"], h=dp(20)))
-            row.add_widget(col); content.add_widget(row)
+            col.add_widget(make_label(f"{tk['time']} - Progress: {tk.get('progress', 0)}%", fs=dp(12), color=t["muted"], h=dp(20)))
+
+            detail_btn = Button(text="Details", size_hint_x=None, width=dp(60), height=dp(35),
+                                background_normal="", background_color=TEAL, color=WHITE, font_size=dp(11), bold=True, pos_hint={"center_y": 0.5})
+            detail_btn.bind(on_release=partial(show_task_details, i, self.on_pre_enter))
+
+            row.add_widget(col)
+            row.add_widget(detail_btn)
+            content.add_widget(row)
 
         scroll.add_widget(content)
         box.add_widget(scroll)
@@ -325,10 +403,81 @@ class HomeScreen(SafeScreen):
     def toggle_task(self, index, *args):
         today = str(date.today())
         tk = data["tasks"][index]
+        if "done_dates" not in tk: tk["done_dates"] = []
+
         if today not in tk["done_dates"]:
-            tk["done_dates"].append(today); add_points(10); check_perfect_day()
-        else: tk["done_dates"].remove(today)
+            tk["done_dates"].append(today)
+            tk["progress"] = 100
+            award_points_once(f"task_{index}_{today}", 10)
+            check_perfect_day()
+        else:
+            tk["done_dates"].remove(today)
+            tk["progress"] = 0
+            revoke_points_once(f"task_{index}_{today}", 10)
+
         save_data(); self.on_pre_enter()
+
+def show_task_details(index, refresh_callback=None, *args):
+    tk = data["tasks"][index]
+    today = str(date.today())
+
+    popup_content = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
+    with popup_content.canvas.before:
+        Color(0.18, 0.14, 0.11, 1)
+        rect = RoundedRectangle(radius=[dp(15)])
+    popup_content.bind(pos=lambda inst, val: setattr(rect, "pos", inst.pos),
+                       size=lambda inst, val: setattr(rect, "size", inst.size))
+
+    popup_content.add_widget(Label(text=f"Task: {tk['name']}", font_size=dp(18), bold=True, color=GOLD, size_hint_y=None, height=dp(30)))
+    popup_content.add_widget(Label(text=f"Time: {tk['time']} | Priority: {tk.get('priority', 'Medium')}", font_size=dp(13), color=WHITE, size_hint_y=None, height=dp(25)))
+    popup_content.add_widget(Label(text=f"Recurring: {'Yes' if tk.get('recurring') else 'No'} | Added: {tk.get('date_added', today)}", font_size=dp(12), color=GRAY, size_hint_y=None, height=dp(20)))
+
+    note_text = tk.get("note", "").strip() or "No note provided for this task."
+    popup_content.add_widget(Label(text="Note:", font_size=dp(13), bold=True, color=TEAL, size_hint_y=None, height=dp(20)))
+    note_box = Label(text=note_text, font_size=dp(12), color=WHITE, size_hint_y=None, height=dp(40), halign="left", valign="top")
+    note_box.bind(size=lambda inst, val: setattr(note_box, "text_size", val))
+    popup_content.add_widget(note_box)
+
+    curr_prog = tk.get("progress", 100 if today in tk.get("done_dates", []) else 0)
+    prog_label = Label(text=f"Progress: {curr_prog}%", font_size=dp(14), bold=True, color=PINK, size_hint_y=None, height=dp(25))
+    popup_content.add_widget(prog_label)
+
+    slider = Slider(min=0, max=100, value=curr_prog, step=5, size_hint_y=None, height=dp(35))
+    def on_slider_change(inst, val):
+        prog_label.text = f"Progress: {int(val)}%"
+    slider.bind(value=on_slider_change)
+    popup_content.add_widget(slider)
+
+    btn_row = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
+    cancel_btn = Button(text="Cancel", background_normal="", background_color=GRAY, color=WHITE, bold=True)
+    save_btn = Button(text="Save Changes", background_normal="", background_color=ORANGE, color=WHITE, bold=True)
+    btn_row.add_widget(cancel_btn)
+    btn_row.add_widget(save_btn)
+    popup_content.add_widget(btn_row)
+
+    popup = Popup(title="Task Details", content=popup_content, size_hint=(0.9, 0.65), auto_dismiss=True)
+    cancel_btn.bind(on_release=lambda *a: popup.dismiss())
+
+    def save_details(*a):
+        new_prog = int(slider.value)
+        tk["progress"] = new_prog
+        if "done_dates" not in tk: tk["done_dates"] = []
+
+        if new_prog == 100:
+            if today not in tk["done_dates"]:
+                tk["done_dates"].append(today)
+                award_points_once(f"task_{index}_{today}", 10)
+        else:
+            if today in tk["done_dates"]:
+                tk["done_dates"].remove(today)
+                revoke_points_once(f"task_{index}_{today}", 10)
+
+        save_data()
+        popup.dismiss()
+        if refresh_callback: refresh_callback()
+
+    save_btn.bind(on_release=save_details)
+    popup.open()
 
 class HabitsScreen(SafeScreen):
     def _build(self):
@@ -349,12 +498,12 @@ class HabitsScreen(SafeScreen):
             card = Card(orientation="vertical", height=dp(140))
             top = BoxLayout(size_hint_y=None, height=dp(30))
             top.add_widget(make_label(h["name"], fs=dp(16), bold=True, h=dp(30)))
-            streak = sum(1 for d in week if d in h["log"])
+            streak = sum(1 for d in week if d in h.get("log", []))
             top.add_widget(make_label(f"{streak}/7", fs=dp(15), color=color, bold=True, h=dp(30)))
             card.add_widget(top)
             heat = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(6))
             for wd, d in enumerate(week):
-                done = d in h["log"]
+                done = d in h.get("log", [])
                 b = Button(text="", size_hint_y=None, height=dp(44), background_normal="", background_color=color if done else GRAY, font_size=1)
                 b.bind(on_release=partial(self.toggle_habit, idx, d))
                 heat.add_widget(b)
@@ -368,10 +517,13 @@ class HabitsScreen(SafeScreen):
 
     def toggle_habit(self, idx, day, *args):
         h = data["habits"][idx]
-        if day in h["log"]: h["log"].remove(day)
+        if "log" not in h: h["log"] = []
+        if day in h["log"]:
+            h["log"].remove(day)
+            if day == str(date.today()): revoke_points_once(f"habit_{idx}_{day}", 5)
         else:
             h["log"].append(day)
-            if day == str(date.today()): add_points(5)
+            if day == str(date.today()): award_points_once(f"habit_{idx}_{day}", 5)
         save_data(); self.on_pre_enter()
 
 class AddHabitScreen(SafeScreen):
@@ -438,31 +590,48 @@ class TasksScreen(SafeScreen):
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
         today, colors = str(date.today()), {"High": PINK, "Medium": GOLD, "Low": (0.6,0.6,0.6,1)}
         for i, tk in enumerate(data["tasks"]):
-            done = today in tk["done_dates"]
+            done = today in tk.get("done_dates", [])
             row = Card(orientation="horizontal", height=dp(80), padding=dp(12))
             check = Button(text="OK" if done else "", size_hint_x=None, width=dp(40), height=dp(40), background_normal="", background_color=(0.15,0.6,0.3,1) if done else GRAY, color=WHITE, font_size=dp(12), bold=True, pos_hint={"center_y":0.5})
             check.bind(on_release=partial(self.toggle_task, i))
             row.add_widget(check)
+
             col = BoxLayout(orientation="vertical")
             col.add_widget(make_label(tk["name"], fs=dp(16), bold=True, h=dp(25)))
-            col.add_widget(make_label(tk["time"], fs=dp(13), color=t["muted"], h=dp(20)))
+            col.add_widget(make_label(f"{tk['time']} | Note: {tk.get('note', '')[:12]}...", fs=dp(12), color=t["muted"], h=dp(20)))
             row.add_widget(col)
+
             pr = tk.get("priority", "Medium")
-            pr_lbl = Label(text=pr, font_size=dp(11), color=WHITE, bold=True, size_hint_x=None, width=dp(70), halign="center", valign="middle")
+            pr_lbl = Label(text=pr, font_size=dp(11), color=WHITE, bold=True, size_hint_x=None, width=dp(60), halign="center", valign="middle")
             with pr_lbl.canvas.before:
                 Color(*colors.get(pr, GOLD))
                 r = RoundedRectangle(pos=pr_lbl.pos, size=pr_lbl.size, radius=[dp(14)])
             pr_lbl.bind(pos=lambda inst, val, rr=r: setattr(rr, "pos", inst.pos), size=lambda inst, val, rr=r: setattr(rr, "size", inst.size))
             row.add_widget(pr_lbl)
+
+            detail_btn = Button(text="View", size_hint_x=None, width=dp(50), height=dp(35),
+                                background_normal="", background_color=TEAL, color=WHITE, font_size=dp(11), bold=True, pos_hint={"center_y":0.5})
+            detail_btn.bind(on_release=partial(show_task_details, i, self.on_pre_enter))
+            row.add_widget(detail_btn)
+
             content.add_widget(row)
         scroll.add_widget(content); box.add_widget(scroll); box.add_widget(bottom_nav("tasks")); root.add_widget(box); add_fab(root, "add_task"); self.add_widget(root)
 
     def toggle_task(self, idx, *args):
         today = str(date.today())
         tk = data["tasks"][idx]
+        if "done_dates" not in tk: tk["done_dates"] = []
+
         if today not in tk["done_dates"]:
-            tk["done_dates"].append(today); add_points(10); check_perfect_day()
-        else: tk["done_dates"].remove(today)
+            tk["done_dates"].append(today)
+            tk["progress"] = 100
+            award_points_once(f"task_{idx}_{today}", 10)
+            check_perfect_day()
+        else:
+            tk["done_dates"].remove(today)
+            tk["progress"] = 0
+            revoke_points_once(f"task_{idx}_{today}", 10)
+
         save_data(); self.on_pre_enter()
 
 class AddTaskScreen(SafeScreen):
@@ -515,20 +684,24 @@ class AddTaskScreen(SafeScreen):
     def save_task(self, inst):
         n, t = self.name_input.text, self.time_input.text
         if not n or not t: show_popup("Error", "Enter name & time."); return
-        data["tasks"].append({"name": n, "time": t, "priority": self.priority, "recurring": self.recur, "note": self.note_input.text, "done_dates": []})
+        data["tasks"].append({
+            "name": n, "time": t, "priority": self.priority,
+            "recurring": self.recur, "note": self.note_input.text,
+            "done_dates": [], "progress": 0, "date_added": str(date.today())
+        })
         save_data()
-        show_popup("Saved", f"Task '{n}' added!", on_close=lambda: go_screen("tasks"))
+        show_popup("Task Added Successfully", f"Task '{n}' was created and saved!", on_close=lambda: go_screen("tasks"))
 
 class ReportsScreen(SafeScreen):
     mode = "weekly"
     def _build(self):
-        self.clear_widgets(); t = theme(); root = BoxLayout(orientation="vertical")
-        root.add_widget(header("Reports", c1=BLUE, c2=(0.27,0.51,0.70,1)))
+        self.clear_widgets(); root = BoxLayout(orientation="vertical")
+        root.add_widget(header("Reports & History", c1=BLUE, c2=(0.27,0.51,0.70,1)))
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
         today = date.today()
         dates = [str(today - timedelta(days=i)) for i in range(7)] if self.mode == "weekly" else None
         def in_range(d): return d in dates if dates else d.startswith(today.strftime("%Y-%m"))
-        total_tasks = sum(1 for tk in data["tasks"] for d in tk["done_dates"] if in_range(d))
+        total_tasks = sum(1 for tk in data["tasks"] for d in tk.get("done_dates", []) if in_range(d))
         namaz_count = sum(len(v) for d, v in data["namaz_log"].items() if in_range(d))
         quran_count = sum(1 for d in data["quran_log"] if in_range(d))
         ent_count = sum(1 for d in data["entertainment_log"] if in_range(d))
@@ -553,13 +726,22 @@ class ReportsScreen(SafeScreen):
         col2.add_widget(stat_tile(f"{quran_count}/{days_count}", "Quran Days", PURPLE))
         col2.add_widget(stat_tile(f"{ent_count}/{days_count}", "Entertainment", GOLD))
         grid.add_widget(col1); grid.add_widget(col2); content.add_widget(grid)
-        content.add_widget(section_label("Moods", color=BLUE))
-        for d, entry in sorted(data["notes"].items(), reverse=True):
-            if in_range(d):
-                row = Card(orientation="horizontal", height=dp(45), padding=dp(12))
-                row.add_widget(make_label(d, fs=dp(13), h=dp(30)))
-                row.add_widget(make_label(entry["mood"], fs=dp(13), color=BLUE, bold=True, h=dp(30)))
-                content.add_widget(row)
+
+        content.add_widget(section_label("Saved Daily Mood Notes History", color=BLUE))
+        if not data.get("notes"):
+            content.add_widget(make_label("No daily check-ins recorded yet.", fs=dp(13), color=GRAY))
+        else:
+            for d, entry in sorted(data["notes"].items(), reverse=True):
+                card = Card(orientation="vertical", height=dp(85), padding=dp(10))
+                top_line = BoxLayout(size_hint_y=None, height=dp(25))
+                top_line.add_widget(make_label(f"Date: {d}", fs=dp(13), bold=True, h=dp(25)))
+                top_line.add_widget(make_label(f"Mood: {entry.get('mood', 'Normal')}", fs=dp(13), color=GOLD, bold=True, h=dp(25)))
+                card.add_widget(top_line)
+
+                note_txt = entry.get('note', '').strip() or "(No written note)"
+                card.add_widget(make_label(f"Note: {note_txt}", fs=dp(12), color=WHITE, h=dp(40)))
+                content.add_widget(card)
+
         scroll.add_widget(content); root.add_widget(scroll); root.add_widget(bottom_nav("reports")); self.add_widget(root)
 
     def set_mode(self, m, *args):
@@ -571,43 +753,99 @@ class MoreScreen(SafeScreen):
         self.clear_widgets(); root = BoxLayout(orientation="vertical")
         root.add_widget(header("More Options", c1=PURPLE, c2=(0.59,0.42,0.77,1)))
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(12)); content.bind(minimum_height=content.setter("height"))
-        for label, s, c in [("Exam Days", "exams", PINK), ("Projects", "projects", BLUE), ("Daily Note", "checkin", GOLD), ("Namaz & Quran", "namaz", ORANGE)]:
-            btn = make_button(label, h=dp(65), bg=c, fs=dp(17))
+        for label, s, c in [("Exam Days", "exams", PINK), ("Projects", "projects", BLUE), ("Daily Note / Check-in", "checkin", GOLD), ("Namaz & Quran", "namaz", ORANGE), ("Historical Work Viewer", "history", TEAL)]:
+            btn = make_button(label, h=dp(60), bg=c, fs=dp(16))
             btn.bind(on_release=partial(go_screen, s))
             content.add_widget(btn)
         dm = "Light Mode" if data.get("dark_mode") else "Dark Mode"
-        dark_btn = make_button(dm, h=dp(65), bg=(0.4,0.4,0.4,1), fs=dp(17))
+        dark_btn = make_button(dm, h=dp(60), bg=(0.4,0.4,0.4,1), fs=dp(16))
         dark_btn.bind(on_release=self.toggle_dark)
         content.add_widget(dark_btn)
         scroll.add_widget(content); root.add_widget(scroll); root.add_widget(bottom_nav("more")); self.add_widget(root)
+
     def toggle_dark(self, inst):
         data["dark_mode"] = not data.get("dark_mode", False)
         save_data(); Window.clearcolor = theme()["bg"]; self.on_pre_enter()
 
+class HistoryScreen(SafeScreen):
+    def _build(self):
+        self.clear_widgets()
+        root = BoxLayout(orientation="vertical")
+        root.add_widget(header("Work History Viewer", back_to="more", c1=TEAL))
+        scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
+
+        content.add_widget(make_label("Select or Enter Date (YYYY-MM-DD):", fs=dp(15), bold=True, color=TEAL))
+        self.date_input = TextInput(text=str(date.today()), size_hint_y=None, height=dp(45), font_size=dp(16))
+        content.add_widget(self.date_input)
+
+        search_btn = make_button("LOAD DATE ACTIVITIES", bg=TEAL, h=dp(45))
+        search_btn.bind(on_release=self.load_history)
+        content.add_widget(search_btn)
+
+        self.history_container = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(10))
+        self.history_container.bind(minimum_height=self.history_container.setter("height"))
+        content.add_widget(self.history_container)
+
+        scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+        self.load_history()
+
+    def load_history(self, *args):
+        self.history_container.clear_widgets()
+        target_date = self.date_input.text.strip()
+
+        done_tasks = [tk for tk in data["tasks"] if target_date in tk.get("done_dates", [])]
+        card1 = Card(orientation="vertical", height=dp(30 + max(1, len(done_tasks))*25))
+        card1.add_widget(make_label(f"Tasks Completed on {target_date}: ({len(done_tasks)})", bold=True, color=TEAL))
+        for tk in done_tasks:
+            card1.add_widget(make_label(f"• {tk['name']} ({tk['time']})", fs=dp(13), color=WHITE))
+        if not done_tasks: card1.add_widget(make_label("No completed tasks logged.", fs=dp(12), color=GRAY))
+        self.history_container.add_widget(card1)
+
+        namaz_done = data.get("namaz_log", {}).get(target_date, [])
+        card2 = Card(orientation="vertical", height=dp(30 + max(1, len(namaz_done))*25))
+        card2.add_widget(make_label(f"Namaz Prayed: ({len(namaz_done)}/5)", bold=True, color=ORANGE))
+        for p in namaz_done:
+            card2.add_widget(make_label(f"• {p}", fs=dp(13), color=WHITE))
+        if not namaz_done: card2.add_widget(make_label("No prayers logged for this day.", fs=dp(12), color=GRAY))
+        self.history_container.add_widget(card2)
+
+        mood_entry = data.get("notes", {}).get(target_date)
+        card3 = Card(orientation="vertical", height=dp(80))
+        card3.add_widget(make_label("Daily Mood & Note:", bold=True, color=GOLD))
+        if mood_entry:
+            card3.add_widget(make_label(f"Mood: {mood_entry.get('mood')} | Note: {mood_entry.get('note')}", fs=dp(12), color=WHITE))
+        else:
+            card3.add_widget(make_label("No check-in recorded for this day.", fs=dp(12), color=GRAY))
+        self.history_container.add_widget(card3)
+
 class ExamsScreen(SafeScreen):
     def _build(self):
-        self.clear_widgets(); t = theme()
+        self.clear_widgets()
         root = BoxLayout(orientation="vertical")
         root.add_widget(header("Exam Days", back_to="more", c1=PINK))
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
         content.add_widget(make_label("Subject:", h=dp(25), color=PINK, bold=True))
         self.sub = TextInput(size_hint_y=None, height=dp(45)); content.add_widget(self.sub)
-        content.add_widget(make_label("Date (YYYY-MM-DD):", h=dp(25), color=PINK, bold=True))
+        content.add_widget(make_label("Date (YYYY-MM-DD or MM-DD):", h=dp(25), color=PINK, bold=True))
         self.dt = TextInput(size_hint_y=None, height=dp(45)); content.add_widget(self.dt)
         add_btn = make_button("+ ADD EXAM", h=dp(50), bg=PINK)
         add_btn.bind(on_release=self.add_exam)
         content.add_widget(add_btn)
         today = date.today()
         for exam in data["exams"]:
-            try:
-                dl = (date.fromisoformat(exam["date"]) - today).days
+            parsed_dt = parse_flexible_date(exam.get("date"))
+            if parsed_dt:
+                dl = (parsed_dt - today).days
                 info = f"in {dl} days" if dl > 0 else ("TODAY!" if dl == 0 else "passed")
-            except ValueError: info = "invalid date"
+            else:
+                info = "invalid date"
+
             card = Card(orientation="vertical", height=dp(70), padding=dp(12))
             card.add_widget(make_label(exam["subject"], fs=dp(15), bold=True, h=dp(25)))
-            card.add_widget(make_label(info, fs=dp(12), color=PINK, h=dp(20)))
+            card.add_widget(make_label(f"Date: {exam['date']} ({info})", fs=dp(12), color=PINK, h=dp(20)))
             content.add_widget(card)
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+
     def add_exam(self, inst):
         if not self.sub.text or not self.dt.text: show_popup("Error", "Enter subject and date."); return
         data["exams"].append({"subject": self.sub.text, "date": self.dt.text}); save_data(); self.on_pre_enter()
@@ -637,35 +875,68 @@ class ProjectsScreen(SafeScreen):
                 row.add_widget(b)
             card.add_widget(row); content.add_widget(card)
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+
     def add_project(self, inst):
         if not self.tit.text or not self.edt.text: show_popup("Error", "Enter title and end date."); return
         data["projects"].append({"title": self.tit.text, "start": str(date.today()), "end": self.edt.text, "completed": False}); save_data(); self.on_pre_enter()
+
     def complete_project(self, idx, *args):
         data["projects"][idx]["completed"] = True; save_data(); self.on_pre_enter()
 
 class CheckinScreen(SafeScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.sel_mood = "Happy"
+
     def _build(self):
         self.clear_widgets()
         root = BoxLayout(orientation="vertical")
-        root.add_widget(header("Daily Note", back_to="more", c1=GOLD))
+        root.add_widget(header("Daily Note & Mood", back_to="more", c1=GOLD))
         scroll = ScrollView(); content = BoxLayout(orientation="vertical", size_hint_y=None, padding=dp(15), spacing=dp(10)); content.bind(minimum_height=content.setter("height"))
-        content.add_widget(make_label("How do you feel today?", fs=dp(16), bold=True, h=dp(35)))
-        self.sel_mood = "Happy"
-        for m in ["Happy", "Normal", "Tired/Low", "Frustrated", "Sleepy"]:
-            btn = make_button(m, h=dp(48), bg=GOLD if m=="Happy" else GRAY)
+
+        today = str(date.today())
+        existing = data.get("notes", {}).get(today, {})
+        if existing and "mood" in existing:
+            self.sel_mood = existing["mood"]
+
+        content.add_widget(make_label("Select your mood today:", fs=dp(16), bold=True, h=dp(30)))
+
+        mood_options = ["Happy", "Normal", "Tired/Low", "Frustrated", "Sleepy"]
+        self.mood_buttons = {}
+
+        for m in mood_options:
+            is_selected = (m == self.sel_mood)
+            btn = make_button(f"{'[SELECTED] ' if is_selected else ''}{m}", h=dp(45), bg=GOLD if is_selected else GRAY)
             btn.bind(on_release=partial(self.select_mood, m))
+            self.mood_buttons[m] = btn
             content.add_widget(btn)
-        content.add_widget(make_label("Write anything about your day:", h=dp(25), color=GOLD, bold=True))
-        self.note = TextInput(size_hint_y=None, height=dp(120), multiline=True); content.add_widget(self.note)
+
+        content.add_widget(make_label("Write notes about your day:", h=dp(25), color=GOLD, bold=True))
+        existing_note = existing.get("note", "")
+        self.note = TextInput(text=existing_note, size_hint_y=None, height=dp(120), multiline=True)
+        content.add_widget(self.note)
+
         save_btn = make_button("SAVE CHECK-IN", h=dp(55), bg=GOLD)
         save_btn.bind(on_release=self.save)
         content.add_widget(save_btn)
+
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+
     def select_mood(self, mm, *args):
-        self.sel_mood = mm; self.on_pre_enter()
+        self.sel_mood = mm
+        for name, btn in self.mood_buttons.items():
+            if name == mm:
+                btn.text = f"[SELECTED] {name}"
+                btn.background_color = GOLD
+            else:
+                btn.text = name
+                btn.background_color = GRAY
+
     def save(self, inst):
         today = str(date.today())
-        data["notes"][today] = {"mood": self.sel_mood, "note": self.note.text.strip()}; save_data(); show_popup("Saved", "Check-in saved!")
+        data["notes"][today] = {"mood": self.sel_mood, "note": self.note.text.strip()}
+        save_data()
+        show_popup("Saved Successfully", "Your daily mood and notes have been permanently stored!")
 
 class NamazScreen(SafeScreen):
     def _build(self):
@@ -686,7 +957,7 @@ class NamazScreen(SafeScreen):
             col.add_widget(make_label(p, fs=dp(15), bold=True, h=dp(25)))
             col.add_widget(make_label(times[p], fs=dp(12), color=theme()["muted"], h=dp(20)))
             row.add_widget(col); content.add_widget(row)
-        q_done = today in data["quran_log"]
+        q_done = today in data.get("quran_log", [])
         qrow = Card(orientation="horizontal", height=dp(70), padding=dp(12), spacing=dp(12))
         qcheck = Button(text="OK" if q_done else "", size_hint_x=None, width=dp(40), height=dp(40), background_normal="", background_color=(0.15,0.6,0.3,1) if q_done else GRAY, color=WHITE, font_size=dp(12), bold=True)
         qcheck.bind(on_release=self.toggle_quran)
@@ -694,15 +965,26 @@ class NamazScreen(SafeScreen):
         qrow.add_widget(make_label("Quran Recitation", fs=dp(15), bold=True))
         content.add_widget(qrow)
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
+
     def toggle_namaz(self, p, *args):
         today = str(date.today())
-        if p not in data["namaz_log"][today]: data["namaz_log"][today].append(p); add_points(15)
-        else: data["namaz_log"][today].remove(p)
+        if p not in data["namaz_log"][today]:
+            data["namaz_log"][today].append(p)
+            award_points_once(f"namaz_{p}_{today}", 15)
+        else:
+            data["namaz_log"][today].remove(p)
+            revoke_points_once(f"namaz_{p}_{today}", 15)
         save_data(); self.on_pre_enter()
+
     def toggle_quran(self, inst):
         today = str(date.today())
-        if today not in data["quran_log"]: data["quran_log"].append(today); add_points(15)
-        else: data["quran_log"].remove(today)
+        if "quran_log" not in data: data["quran_log"] = []
+        if today not in data["quran_log"]:
+            data["quran_log"].append(today)
+            award_points_once(f"quran_{today}", 15)
+        else:
+            data["quran_log"].remove(today)
+            revoke_points_once(f"quran_{today}", 15)
         save_data(); self.on_pre_enter()
 
 class RoutineApp(App):
@@ -719,11 +1001,14 @@ class RoutineApp(App):
         sm.add_widget(AddTaskScreen(name="add_task"))
         sm.add_widget(ReportsScreen(name="reports"))
         sm.add_widget(MoreScreen(name="more"))
+        sm.add_widget(HistoryScreen(name="history"))
         sm.add_widget(ExamsScreen(name="exams"))
         sm.add_widget(ProjectsScreen(name="projects"))
         sm.add_widget(CheckinScreen(name="checkin"))
         sm.add_widget(NamazScreen(name="namaz"))
         return sm
+
     def on_stop(self): save_data()
 
-if __name__ == "__main__": RoutineApp().run()
+if __name__ == "__main__":
+    RoutineApp().run()
