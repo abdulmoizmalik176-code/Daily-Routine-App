@@ -1,5 +1,6 @@
 import json
 import os
+import copy
 from datetime import date, datetime, timedelta
 from functools import partial
 
@@ -46,11 +47,14 @@ def load_data():
                     if k not in d: d[k] = v
                 return d
         except (json.JSONDecodeError, OSError):
-            return dict(DATA_DEFAULT)
-    return dict(DATA_DEFAULT)
+            return copy.deepcopy(DATA_DEFAULT)
+    return copy.deepcopy(DATA_DEFAULT)
 
 def save_data():
     try:
+        dir_path = os.path.dirname(DATA_FILE)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except OSError:
@@ -116,7 +120,7 @@ def show_popup(title, message, on_close=None):
 def award_points_once(item_id, amount):
     today = str(date.today())
     if today not in data.get("points_awarded_log", {}):
-        data["points_awarded_log"][today] = []
+        data.setdefault("points_awarded_log", {})[today] = []
 
     if item_id not in data["points_awarded_log"][today]:
         data["points_awarded_log"][today].append(item_id)
@@ -132,7 +136,7 @@ def revoke_points_once(item_id, amount):
         save_data()
 
 def check_level_up():
-    new_level = (data["points"] // 100) + 1
+    new_level = (data.get("points", 0) // 100) + 1
     if new_level > data.get("level", 1):
         data["level"] = new_level
         data.setdefault("badges", []).append(f"Level {data['level']} Reached")
@@ -215,7 +219,8 @@ class Ring(Widget):
     def _draw(self, *args):
         self.canvas.clear()
         with self.canvas:
-            cx, cy, r = self.center_x, self.center_y, min(self.width, self.height)/2 - dp(10)
+            cx, cy = self.center_x, self.center_y
+            r = max(1, min(self.width, self.height)/2 - dp(10))
             Color(0.85, 0.82, 0.78, 1) if not data.get("dark_mode") else Color(0.3, 0.25, 0.2, 1)
             Line(circle=(cx, cy, r), width=dp(9))
             Color(*self.ring_color)
@@ -337,9 +342,14 @@ class HomeScreen(SafeScreen):
 
         content.add_widget(section_label("Focus Timer"))
         pcard = Card(orientation="horizontal", height=dp(80))
-        self.timer_lbl = Label(text="25:00", font_size=dp(32), color=PINK, bold=True, size_hint_x=None, width=dp(120))
+        mins, secs = divmod(self.time_left, 60)
+        timer_text = f"{mins:02d}:{secs:02d}"
+        btn_text = "Stop" if self.timer_running else "Start Focus"
+        btn_color = (0.8, 0.1, 0.1, 1) if self.timer_running else PINK
+
+        self.timer_lbl = Label(text=timer_text, font_size=dp(32), color=PINK, bold=True, size_hint_x=None, width=dp(120))
         pcard.add_widget(self.timer_lbl)
-        self.pom_btn = make_button("Start Focus", h=dp(50), bg=PINK)
+        self.pom_btn = make_button(btn_text, h=dp(50), bg=btn_color)
         self.pom_btn.bind(on_release=self.toggle_timer)
         pcard.add_widget(self.pom_btn); content.add_widget(pcard)
 
@@ -401,15 +411,16 @@ class HomeScreen(SafeScreen):
         tk = data["tasks"][index]
         if "done_dates" not in tk: tk["done_dates"] = []
 
+        item_key = f"task_{tk.get('name', index)}_{today}"
         if today not in tk["done_dates"]:
             tk["done_dates"].append(today)
             tk["progress"] = 100
-            award_points_once(f"task_{index}_{today}", 10)
+            award_points_once(item_key, 10)
             check_perfect_day()
         else:
             tk["done_dates"].remove(today)
             tk["progress"] = 0
-            revoke_points_once(f"task_{index}_{today}", 10)
+            revoke_points_once(item_key, 10)
 
         save_data(); self.on_pre_enter()
 
@@ -430,8 +441,9 @@ def show_task_details(index, refresh_callback=None, *args):
 
     note_text = tk.get("note", "").strip() or "No note provided for this task."
     popup_content.add_widget(Label(text="Note:", font_size=dp(13), bold=True, color=TEAL, size_hint_y=None, height=dp(20)))
-    note_box = Label(text=note_text, font_size=dp(12), color=WHITE, size_hint_y=None, height=dp(40), halign="left", valign="top")
-    note_box.bind(size=lambda inst, val: setattr(note_box, "text_size", val))
+    
+    note_box = Label(text=note_text, font_size=dp(12), color=WHITE, size_hint_y=None, height=dp(45), halign="left", valign="top")
+    note_box.bind(size=lambda inst, val: setattr(note_box, "text_size", (val[0], None)))
     popup_content.add_widget(note_box)
 
     curr_prog = tk.get("progress", 100 if today in tk.get("done_dates", []) else 0)
@@ -459,14 +471,15 @@ def show_task_details(index, refresh_callback=None, *args):
         tk["progress"] = new_prog
         if "done_dates" not in tk: tk["done_dates"] = []
 
+        item_key = f"task_{tk.get('name', index)}_{today}"
         if new_prog == 100:
             if today not in tk["done_dates"]:
                 tk["done_dates"].append(today)
-                award_points_once(f"task_{index}_{today}", 10)
+                award_points_once(item_key, 10)
         else:
             if today in tk["done_dates"]:
                 tk["done_dates"].remove(today)
-                revoke_points_once(f"task_{index}_{today}", 10)
+                revoke_points_once(item_key, 10)
 
         save_data()
         popup.dismiss()
@@ -514,12 +527,13 @@ class HabitsScreen(SafeScreen):
     def toggle_habit(self, idx, day, *args):
         h = data["habits"][idx]
         if "log" not in h: h["log"] = []
+        item_key = f"habit_{h.get('name', idx)}_{day}"
         if day in h["log"]:
             h["log"].remove(day)
-            if day == str(date.today()): revoke_points_once(f"habit_{idx}_{day}", 5)
+            if day == str(date.today()): revoke_points_once(item_key, 5)
         else:
             h["log"].append(day)
-            if day == str(date.today()): award_points_once(f"habit_{idx}_{day}", 5)
+            if day == str(date.today()): award_points_once(item_key, 5)
         save_data(); self.on_pre_enter()
 
 class AddHabitScreen(SafeScreen):
@@ -618,15 +632,16 @@ class TasksScreen(SafeScreen):
         tk = data["tasks"][idx]
         if "done_dates" not in tk: tk["done_dates"] = []
 
+        item_key = f"task_{tk.get('name', idx)}_{today}"
         if today not in tk["done_dates"]:
             tk["done_dates"].append(today)
             tk["progress"] = 100
-            award_points_once(f"task_{idx}_{today}", 10)
+            award_points_once(item_key, 10)
             check_perfect_day()
         else:
             tk["done_dates"].remove(today)
             tk["progress"] = 0
-            revoke_points_once(f"task_{idx}_{today}", 10)
+            revoke_points_once(item_key, 10)
 
         save_data(); self.on_pre_enter()
 
@@ -723,19 +738,23 @@ class ReportsScreen(SafeScreen):
         col2.add_widget(stat_tile(f"{ent_count}/{days_count}", "Entertainment", GOLD))
         grid.add_widget(col1); grid.add_widget(col2); content.add_widget(grid)
 
+        # SAVED DAILY MOOD NOTES HISTORY (FULL MOOD & NOTE VISIBILITY FIX)
         content.add_widget(section_label("Saved Daily Mood Notes History", color=BLUE))
         if not data.get("notes"):
             content.add_widget(make_label("No daily check-ins recorded yet.", fs=dp(13), color=GRAY))
         else:
             for d, entry in sorted(data.get("notes", {}).items(), reverse=True):
-                card = Card(orientation="vertical", height=dp(85), padding=dp(10))
+                card = Card(orientation="vertical", height=dp(110), padding=dp(12), spacing=dp(5))
                 top_line = BoxLayout(size_hint_y=None, height=dp(25))
                 top_line.add_widget(make_label(f"Date: {d}", fs=dp(13), bold=True, h=dp(25)))
                 top_line.add_widget(make_label(f"Mood: {entry.get('mood', 'Normal')}", fs=dp(13), color=GOLD, bold=True, h=dp(25)))
                 card.add_widget(top_line)
 
                 note_txt = entry.get('note', '').strip() or "(No written note)"
-                card.add_widget(make_label(f"Note: {note_txt}", fs=dp(12), color=WHITE, h=dp(40)))
+                note_lbl = Label(text=f"Note: {note_txt}", font_size=dp(12), color=WHITE,
+                                 size_hint_y=None, height=dp(50), halign="left", valign="top")
+                note_lbl.bind(size=lambda inst, val: setattr(note_lbl, "text_size", (val[0], None)))
+                card.add_widget(note_lbl)
                 content.add_widget(card)
 
         scroll.add_widget(content); root.add_widget(scroll); root.add_widget(bottom_nav("reports")); self.add_widget(root)
@@ -789,29 +808,42 @@ class HistoryScreen(SafeScreen):
         self.history_container.clear_widgets()
         target_date = self.date_input.text.strip()
 
+        # 1. Tasks
         done_tasks = [tk for tk in data.get("tasks", []) if target_date in tk.get("done_dates", [])]
-        card1 = Card(orientation="vertical", height=dp(30 + max(1, len(done_tasks))*25))
-        card1.add_widget(make_label(f"Tasks Completed on {target_date}: ({len(done_tasks)})", bold=True, color=TEAL))
+        task_count = max(1, len(done_tasks))
+        needed_h = dp(30 + (task_count * 25) + (task_count * 10) + 30)
+
+        card1 = Card(orientation="vertical", height=needed_h, padding=dp(15), spacing=dp(8))
+        card1.add_widget(make_label(f"Tasks Completed on {target_date}: ({len(done_tasks)})", bold=True, color=TEAL, h=dp(25)))
         for tk in done_tasks:
-            card1.add_widget(make_label(f"• {tk.get('name', '')} ({tk.get('time', '')})", fs=dp(13), color=WHITE))
-        if not done_tasks: card1.add_widget(make_label("No completed tasks logged.", fs=dp(12), color=GRAY))
+            card1.add_widget(make_label(f"• {tk.get('name', '')} ({tk.get('time', '')})", fs=dp(13), color=WHITE, h=dp(22)))
+        if not done_tasks: card1.add_widget(make_label("No completed tasks logged.", fs=dp(12), color=GRAY, h=dp(22)))
         self.history_container.add_widget(card1)
 
+        # 2. Namaz
         namaz_done = data.get("namaz_log", {}).get(target_date, [])
-        card2 = Card(orientation="vertical", height=dp(30 + max(1, len(namaz_done))*25))
-        card2.add_widget(make_label(f"Namaz Prayed: ({len(namaz_done)}/5)", bold=True, color=ORANGE))
+        namaz_count = max(1, len(namaz_done))
+        namaz_h = dp(30 + (namaz_count * 25) + (namaz_count * 10) + 30)
+
+        card2 = Card(orientation="vertical", height=namaz_h, padding=dp(15), spacing=dp(8))
+        card2.add_widget(make_label(f"Namaz Prayed: ({len(namaz_done)}/5)", bold=True, color=ORANGE, h=dp(25)))
         for p in namaz_done:
-            card2.add_widget(make_label(f"• {p}", fs=dp(13), color=WHITE))
-        if not namaz_done: card2.add_widget(make_label("No prayers logged for this day.", fs=dp(12), color=GRAY))
+            card2.add_widget(make_label(f"• {p}", fs=dp(13), color=WHITE, h=dp(22)))
+        if not namaz_done: card2.add_widget(make_label("No prayers logged for this day.", fs=dp(12), color=GRAY, h=dp(22)))
         self.history_container.add_widget(card2)
 
+        # 3. Mood & Note
         mood_entry = data.get("notes", {}).get(target_date)
-        card3 = Card(orientation="vertical", height=dp(80))
-        card3.add_widget(make_label("Daily Mood & Note:", bold=True, color=GOLD))
+        card3 = Card(orientation="vertical", height=dp(110), padding=dp(12))
+        card3.add_widget(make_label("Daily Mood & Note:", bold=True, color=GOLD, h=dp(25)))
         if mood_entry:
-            card3.add_widget(make_label(f"Mood: {mood_entry.get('mood')} | Note: {mood_entry.get('note')}", fs=dp(12), color=WHITE))
+            note_lbl = Label(text=f"Mood: {mood_entry.get('mood')} | Note: {mood_entry.get('note')}",
+                             font_size=dp(12), color=WHITE, size_hint_y=None, height=dp(50),
+                             halign="left", valign="top")
+            note_lbl.bind(size=lambda inst, val: setattr(note_lbl, "text_size", (val[0], None)))
+            card3.add_widget(note_lbl)
         else:
-            card3.add_widget(make_label("No check-in recorded for this day.", fs=dp(12), color=GRAY))
+            card3.add_widget(make_label("No check-in recorded for this day.", fs=dp(12), color=GRAY, h=dp(25)))
         self.history_container.add_widget(card3)
 
 class ExamsScreen(SafeScreen):
@@ -836,7 +868,7 @@ class ExamsScreen(SafeScreen):
             else:
                 info = "invalid date"
 
-            card = Card(orientation="vertical", height=dp(70), padding=dp(12))
+            card = Card(orientation="vertical", height=dp(80), padding=dp(12))
             card.add_widget(make_label(exam.get("subject", "Exam"), fs=dp(15), bold=True, h=dp(25)))
             card.add_widget(make_label(f"Date: {exam.get('date', '')} ({info})", fs=dp(12), color=PINK, h=dp(20)))
             content.add_widget(card)
@@ -918,6 +950,16 @@ class CheckinScreen(SafeScreen):
         save_btn.bind(on_release=self.save)
         content.add_widget(save_btn)
 
+        if existing:
+            content.add_widget(section_label("Today's Saved Entry Preview", color=GOLD))
+            preview_card = Card(orientation="vertical", height=dp(100), padding=dp(12))
+            preview_card.add_widget(make_label(f"Saved Today ({today}): Mood - {existing.get('mood')}", fs=dp(14), bold=True, color=GOLD, h=dp(25)))
+            
+            p_lbl = Label(text=f"Note: {existing.get('note', '')}", font_size=dp(12), color=WHITE, size_hint_y=None, height=dp(45), halign="left", valign="top")
+            p_lbl.bind(size=lambda inst, val: setattr(p_lbl, "text_size", (val[0], None)))
+            preview_card.add_widget(p_lbl)
+            content.add_widget(preview_card)
+
         scroll.add_widget(content); root.add_widget(scroll); self.add_widget(root)
 
     def select_mood(self, mm, *args):
@@ -934,7 +976,7 @@ class CheckinScreen(SafeScreen):
         today = str(date.today())
         data.setdefault("notes", {})[today] = {"mood": self.sel_mood, "note": self.note.text.strip()}
         save_data()
-        show_popup("Saved Successfully", "Your daily mood and notes have been permanently stored!")
+        show_popup("Saved Successfully", "Your daily mood and notes have been permanently stored!", on_close=self.on_pre_enter)
 
 class NamazScreen(SafeScreen):
     def _build(self):
